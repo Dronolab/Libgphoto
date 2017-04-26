@@ -1,9 +1,7 @@
 /* -*- Mode: C; indent-tabs-mode: t; c-basic-offset: 8; tab-width: 8 -*- */
 /* vusb.c
  *
- * Copyright (c) 2001 Lutz Mueller <lutz@users.sf.net>
- * Copyright (c) 1999-2000 Johannes Erdfelt <johannes@erdfelt.com>
- * Copyright (c) 2005, 2007 Hubert Figuiere <hub@figuiere.net>
+ * Copyright (c) 2015,2016 Marcus Meissner <marcus@jet.franken.de>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -147,14 +145,14 @@ gp_port_vusb_write (GPPort *port, const char *bytes, int size)
 	gp_log(GP_LOG_DEBUG,__FUNCTION__,"()");
 
 	C_PARAMS (port && port->pl && port->pl->vcamera);
-	return port->pl->vcamera->write(port->pl->vcamera, 0x02, bytes, size);
+	return port->pl->vcamera->write(port->pl->vcamera, 0x02, (unsigned char*)bytes, size);
 }
 
 static int
 gp_port_vusb_read(GPPort *port, char *bytes, int size)
 {
 	gp_log(GP_LOG_DEBUG,__FUNCTION__,"()");
-	return port->pl->vcamera->read(port->pl->vcamera, 0x81, bytes, size);
+	return port->pl->vcamera->read(port->pl->vcamera, 0x81, (unsigned char*)bytes, size);
 }
 
 static int
@@ -172,7 +170,7 @@ gp_port_vusb_check_int (GPPort *port, char *bytes, int size, int timeout)
 	gp_log(GP_LOG_DEBUG,__FUNCTION__,"()");
         C_PARAMS (port && port->pl && timeout >= 0);
 
-	return port->pl->vcamera->readint(port->pl->vcamera, bytes, size, timeout);
+	return port->pl->vcamera->readint(port->pl->vcamera, (unsigned char*)bytes, size, timeout);
 }
 
 static int

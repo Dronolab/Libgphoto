@@ -36,6 +36,10 @@
 
 #include <usb.h>
 
+#ifndef ENODATA
+#	define ENODATA     120     /* No data available */
+#endif
+
 #include <gphoto2/gphoto2-port.h>
 #include <gphoto2/gphoto2-port-result.h>
 #include <gphoto2/gphoto2-port-log.h>
@@ -456,6 +460,7 @@ gp_port_usb_check_int (GPPort *port, char *bytes, int size, int timeout)
 
 	C_PARAMS (port && port->pl->dh && timeout >= 0);
 
+	/* 0 timeout is okish ... libusb 0.x it will do 1 poll though */
 	ret = usb_interrupt_read(port->pl->dh, port->settings.usb.intep,
 			     bytes, size, timeout);
         if (ret < 0) {

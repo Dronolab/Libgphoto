@@ -1,7 +1,7 @@
 /* -*- Mode: C; indent-tabs-mode: t; c-basic-offset: 8; tab-width: 8 -*- */
 /* vcamera.h
  *
- * Copyright (c) 2015 Marcus Meissner <marcus@jet.franken.de>
+ * Copyright (c) 2015,2016 Marcus Meissner <marcus@jet.franken.de>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -44,9 +44,9 @@ typedef struct vcamera {
 	int (*open)(struct vcamera*, const char*port);
 	int (*close)(struct vcamera*);
 
-	int (*read)(struct vcamera*,  int ep, char *data, int bytes);
-	int (*readint)(struct vcamera*,  char *data, int bytes, int timeout);
-	int (*write)(struct vcamera*, int ep, const char *data, int bytes);
+	int (*read)(struct vcamera*,  int ep, unsigned char *data, int bytes);
+	int (*readint)(struct vcamera*,  unsigned char *data, int bytes, int timeout);
+	int (*write)(struct vcamera*, int ep, const unsigned char *data, int bytes);
 
 	vcameratype	type;
 	unsigned char	*inbulk;
@@ -59,10 +59,15 @@ typedef struct vcamera {
 	unsigned int	session;
 	ptpcontainer	ptpcmd;
 
+	int		exposurebias;
+	unsigned int	shutterspeed;
+	unsigned int	fnumber;
+
 	int		fuzzmode;
 #define FUZZMODE_PROTOCOL	0
 #define FUZZMODE_NORMAL		1
 	FILE*		fuzzf;
+	unsigned int	fuzzpending;
 } vcamera;
 
 vcamera *vcamera_new(vcameratype);

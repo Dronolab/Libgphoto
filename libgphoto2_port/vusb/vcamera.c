@@ -1,7 +1,7 @@
 /* -*- Mode: C; indent-tabs-mode: t; c-basic-offset: 8; tab-width: 8 -*- */
 /* camera.c
  *
- * Copyright (c) 2015,2016 Marcus Meissner <marcus@jet.franken.de>
+ * Copyright (c) 2015-2017 Marcus Meissner <marcus@jet.franken.de>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -358,6 +358,15 @@ static int ptp_imagesize_getvalue(vcamera*,PTPPropertyValue*);
 static int ptp_datetime_getdesc(vcamera*,PTPDevicePropDesc*);
 static int ptp_datetime_getvalue(vcamera*,PTPPropertyValue*);
 static int ptp_datetime_setvalue(vcamera*,PTPPropertyValue*);
+static int ptp_shutterspeed_getdesc(vcamera*,PTPDevicePropDesc*);
+static int ptp_shutterspeed_getvalue(vcamera*,PTPPropertyValue*);
+static int ptp_shutterspeed_setvalue(vcamera*,PTPPropertyValue*);
+static int ptp_fnumber_getdesc(vcamera*,PTPDevicePropDesc*);
+static int ptp_fnumber_getvalue(vcamera*,PTPPropertyValue*);
+static int ptp_fnumber_setvalue(vcamera*,PTPPropertyValue*);
+static int ptp_exposurebias_getdesc(vcamera*,PTPDevicePropDesc*);
+static int ptp_exposurebias_getvalue(vcamera*,PTPPropertyValue*);
+static int ptp_exposurebias_setvalue(vcamera*,PTPPropertyValue*);
 
 static struct ptp_property {
 	int	code;
@@ -367,6 +376,9 @@ static struct ptp_property {
 } ptp_properties[] = {
 	{0x5001,	ptp_battery_getdesc, ptp_battery_getvalue, NULL },
 	{0x5003,	ptp_imagesize_getdesc, ptp_imagesize_getvalue, NULL },
+	{0x5007,	ptp_fnumber_getdesc, ptp_fnumber_getvalue, ptp_fnumber_setvalue },
+	{0x5010,	ptp_exposurebias_getdesc, ptp_exposurebias_getvalue, ptp_exposurebias_setvalue },
+	{0x500d,	ptp_shutterspeed_getdesc, ptp_shutterspeed_getvalue, ptp_shutterspeed_setvalue },
 	{0x5011,	ptp_datetime_getdesc, ptp_datetime_getvalue, ptp_datetime_setvalue },
 };
 
@@ -391,16 +403,16 @@ read_directories(char *path, struct ptp_dirent *parent) {
 	dir = gp_system_opendir(path);
 	if (!dir) return;
 	while ((de=gp_system_readdir(dir))) {
-		if (!strcmp(de->d_name,".")) continue;
-		if (!strcmp(de->d_name,"..")) continue;
+		if (!strcmp(gp_system_filename(de),".")) continue;
+		if (!strcmp(gp_system_filename(de),"..")) continue;
 
 		cur = malloc(sizeof(struct ptp_dirent));
 		if (!cur) break;
-		cur->name = strdup(de->d_name);
-		cur->fsname = malloc(strlen(path)+1+strlen(de->d_name)+1);
+		cur->name = strdup(gp_system_filename(de));
+		cur->fsname = malloc(strlen(path)+1+strlen(gp_system_filename(de))+1);
 		strcpy(cur->fsname,path);
 		strcat(cur->fsname,"/");
-		strcat(cur->fsname,de->d_name);
+		strcat(cur->fsname,gp_system_filename(de));
 		cur->id = ptp_objectid++;
 		cur->next = first_dirent;
 		cur->parent = parent;
@@ -432,6 +444,7 @@ read_tree(char *path) {
 	first_dirent->fsname = strdup(path);
 	first_dirent->id = ptp_objectid++;
 	first_dirent->next = NULL;
+	stat(first_dirent->fsname, &first_dirent->stbuf); /* assuming it works */
 	root = first_dirent;
 	read_directories(path,first_dirent);
 
@@ -449,6 +462,7 @@ read_tree(char *path) {
 		dcim->id = ptp_objectid++;
 		dcim->next = first_dirent;
 		dcim->parent = root;
+		stat(dcim->fsname, &dcim->stbuf); /* assuming it works */
 		first_dirent = dcim;
 	}
 }
@@ -538,7 +552,7 @@ ptp_deviceinfo_write(vcamera *cam, ptpcontainer *ptp) {
 		x += put_16bit_le(data+x,0);		/* VendorExtensionVersion */
 		break;
 	}
-	x += put_string(data+x,"GPhoto-VirtualCamera: 1.0;");	/* VendorExtensionDesc */
+	x += put_string(data+x,"G-V: 1.0;");	/* VendorExtensionDesc */
 	x += put_16bit_le(data+x,0);		/* FunctionalMode */
 
 	cnt = 0;
@@ -584,11 +598,11 @@ ptp_deviceinfo_write(vcamera *cam, ptpcontainer *ptp) {
 	imageformats[0] = 0x3801;
 	x += put_16bit_le_array(data+x,imageformats,1);	/* ImageFormats */
 
-	x += put_string(data+x,"GPhoto");		/* Manufacturer */
-	x += put_string(data+x,"VirtualCamera");	/* Model */
-	x += put_string(data+x,"2.5.9");		/* DeviceVersion */
-	x += put_string(data+x,"0.1");			/* DeviceVersion */
-	x += put_string(data+x,"1");			/* SerialNumber */
+	x += put_string(data+x,"GP");	/* Manufacturer */
+	x += put_string(data+x,"VC");	/* Model */
+	x += put_string(data+x,"2.5.11");/* DeviceVersion */
+	x += put_string(data+x,"0.1");	/* DeviceVersion */
+	x += put_string(data+x,"1");	/* SerialNumber */
 
 	ptp_senddata(cam,0x1001,data,x);
 	free (data);
@@ -793,7 +807,7 @@ ptp_getstorageinfo_write(vcamera *cam, ptpcontainer *ptp) {
 	CHECK_PARAM_COUNT(1);
 
 	if (ptp->params[0] != 0x00010001) {
-		gp_log (GP_LOG_ERROR,__FUNCTION__, "invalid storage id 0x%08x", ptp->params[1]);
+		gp_log (GP_LOG_ERROR,__FUNCTION__, "invalid storage id 0x%08x", ptp->params[0]);
 		ptp_response(cam,PTP_RC_InvalidStorageId,0);
 		return 1;
 	}
@@ -805,8 +819,8 @@ ptp_getstorageinfo_write(vcamera *cam, ptpcontainer *ptp) {
 	x += put_64bit_le (data+x, 0x42424242);	/* MaxCapacity */
 	x += put_64bit_le (data+x, 0x21212121);	/* FreeSpaceInBytes */
 	x += put_32bit_le (data+x, 150);	/* FreeSpaceInImages ... around 150 */
-	x += put_string (data+x, "GPhoto Virtual Camera Storage");	/* StorageDescription */
-	x += put_string (data+x, "GPhoto Virtual Camera Storage Label");	/* VolumeLabel */
+	x += put_string (data+x, "GPVC Storage");	/* StorageDescription */
+	x += put_string (data+x, "GPVCS Label");	/* VolumeLabel */
 
 	ptp_senddata (cam, 0x1005, data, x);
 	free (data);
@@ -1251,6 +1265,9 @@ put_propval (unsigned char *data, uint16_t type, PTPPropertyValue *val) {
 	switch (type) {
 	case 0x1:	return put_8bit_le (data, val->i8);
 	case 0x2:	return put_8bit_le (data, val->u8);
+	case 0x3:	return put_16bit_le (data, val->i16);
+	case 0x4:	return put_16bit_le (data, val->u16);
+	case 0x6:	return put_32bit_le (data, val->u32);
 	case 0xffff:	return put_string (data, val->str);
 	default:	gp_log (GP_LOG_ERROR, __FUNCTION__, "unhandled datatype %d", type);
 			return 0;
@@ -1267,6 +1284,15 @@ get_propval (unsigned char *data, unsigned int len, uint16_t type, PTPPropertyVa
 			return 1;
 	case 0x2:	CHECK_SIZE(1);
 			val->u8 =  get_8bit_le (data);
+			return 1;
+	case 0x3:	CHECK_SIZE(2);
+			val->i16 =  get_16bit_le (data);
+			return 1;
+	case 0x4:	CHECK_SIZE(2);
+			val->u16 =  get_16bit_le (data);
+			return 1;
+	case 0x6:	CHECK_SIZE(4);
+			val->u32 =  get_32bit_le (data);
 			return 1;
 	case 0xffff:	{
 			int slen;
@@ -1597,6 +1623,139 @@ ptp_imagesize_getvalue (vcamera* cam, PTPPropertyValue *val) {
 	return 1;
 }
 
+static int
+ptp_shutterspeed_getdesc (vcamera* cam, PTPDevicePropDesc *desc) {
+	desc->DevicePropertyCode		= 0x500D;
+	desc->DataType				= 0x0006;	/* UINT32 */
+	desc->GetSet				= 1;		/* Get/Set */
+	if (!cam->shutterspeed) cam->shutterspeed = 100; /* 1/100 * 10000 */
+	desc->FactoryDefaultValue.u32		= cam->shutterspeed;
+	desc->CurrentValue.u32			= cam->shutterspeed;
+        desc->FormFlag				= 0x02; /* enum */
+	desc->FORM.Enum.NumberOfValues 		= 9;
+	desc->FORM.Enum.SupportedValue 		= malloc(desc->FORM.Enum.NumberOfValues*sizeof(desc->FORM.Enum.SupportedValue[0]));
+	desc->FORM.Enum.SupportedValue[0].u32	= 10000;
+	desc->FORM.Enum.SupportedValue[1].u32	= 1000;
+	desc->FORM.Enum.SupportedValue[2].u32	= 500;
+	desc->FORM.Enum.SupportedValue[3].u32	= 200;
+	desc->FORM.Enum.SupportedValue[4].u32	= 100;
+	desc->FORM.Enum.SupportedValue[5].u32	= 50;
+	desc->FORM.Enum.SupportedValue[6].u32	= 25;
+	desc->FORM.Enum.SupportedValue[7].u32	= 12;
+	desc->FORM.Enum.SupportedValue[8].u32	= 1;
+
+	ptp_inject_interrupt (cam, 1000, 0x4006, 1, 0x500D, 0xffffffff);
+	return 1;
+}
+
+static int
+ptp_shutterspeed_getvalue (vcamera* cam, PTPPropertyValue *val) {
+	val->u32 = cam->shutterspeed;
+	ptp_inject_interrupt (cam, 1000, 0x4006, 1, 0x500d, 0xffffffff);
+	return 1;
+}
+
+static int
+ptp_shutterspeed_setvalue (vcamera* cam, PTPPropertyValue *val) {
+	ptp_inject_interrupt (cam, 1000, 0x4006, 1, 0x500d, 0xffffffff);
+	gp_log (GP_LOG_DEBUG, __FUNCTION__, "got %d as value", val->u32);
+	cam->shutterspeed = val->u32;
+	return 1;
+}
+
+static int
+ptp_fnumber_getdesc (vcamera* cam, PTPDevicePropDesc *desc) {
+	desc->DevicePropertyCode		= 0x5007;
+	desc->DataType				= 0x0004;	/* UINT16 */
+	desc->GetSet				= 1;		/* Get/Set */
+	if (!cam->fnumber) cam->fnumber = 280; /* 2.8 * 100 */
+	desc->FactoryDefaultValue.u16		= cam->fnumber;
+	desc->CurrentValue.u16			= cam->fnumber;
+        desc->FormFlag				= 0x02; /* enum */
+	desc->FORM.Enum.NumberOfValues 		= 18;
+	desc->FORM.Enum.SupportedValue 		= malloc(desc->FORM.Enum.NumberOfValues*sizeof(desc->FORM.Enum.SupportedValue[0]));
+	desc->FORM.Enum.SupportedValue[0].u16	= 280;
+	desc->FORM.Enum.SupportedValue[1].u16	= 350;
+	desc->FORM.Enum.SupportedValue[2].u16	= 400;
+	desc->FORM.Enum.SupportedValue[3].u16	= 450;
+	desc->FORM.Enum.SupportedValue[4].u16	= 500;
+	desc->FORM.Enum.SupportedValue[5].u16	= 560;
+	desc->FORM.Enum.SupportedValue[6].u16	= 630;
+	desc->FORM.Enum.SupportedValue[7].u16	= 710;
+	desc->FORM.Enum.SupportedValue[8].u16	= 800;
+	desc->FORM.Enum.SupportedValue[9].u16	= 900;
+	desc->FORM.Enum.SupportedValue[10].u16	= 1000;
+	desc->FORM.Enum.SupportedValue[11].u16	= 1100;
+	desc->FORM.Enum.SupportedValue[12].u16	= 1300;
+	desc->FORM.Enum.SupportedValue[13].u16	= 1400;
+	desc->FORM.Enum.SupportedValue[14].u16	= 1600;
+	desc->FORM.Enum.SupportedValue[15].u16	= 1800;
+	desc->FORM.Enum.SupportedValue[16].u16	= 2000;
+	desc->FORM.Enum.SupportedValue[17].u16	= 2200;
+
+	ptp_inject_interrupt (cam, 1000, 0x4006, 1, 0x5007, 0xffffffff);
+	return 1;
+}
+
+static int
+ptp_fnumber_getvalue (vcamera* cam, PTPPropertyValue *val) {
+	val->u16 = cam->fnumber;
+	ptp_inject_interrupt (cam, 1000, 0x4006, 1, 0x5007, 0xffffffff);
+	return 1;
+}
+
+static int
+ptp_fnumber_setvalue (vcamera* cam, PTPPropertyValue *val) {
+	ptp_inject_interrupt (cam, 1000, 0x4006, 1, 0x5007, 0xffffffff);
+	gp_log (GP_LOG_DEBUG, __FUNCTION__, "got %d as value", val->u16);
+	cam->fnumber = val->u16;
+	return 1;
+}
+
+static int
+ptp_exposurebias_getdesc (vcamera* cam, PTPDevicePropDesc *desc) {
+	desc->DevicePropertyCode		= 0x5010;
+	desc->DataType				= 0x0003;	/* INT16 */
+	desc->GetSet				= 1;		/* Get/Set */
+	if (!cam->exposurebias) cam->exposurebias = 0; /* 0.0 */
+	desc->FactoryDefaultValue.i16		= cam->exposurebias;
+	desc->CurrentValue.i16			= cam->exposurebias;
+        desc->FormFlag				= 0x02; /* enum */
+	desc->FORM.Enum.NumberOfValues 		= 13;
+	desc->FORM.Enum.SupportedValue 		= malloc(desc->FORM.Enum.NumberOfValues*sizeof(desc->FORM.Enum.SupportedValue[0]));
+	desc->FORM.Enum.SupportedValue[0].i16	= -3000;
+	desc->FORM.Enum.SupportedValue[1].i16	= -2500;
+	desc->FORM.Enum.SupportedValue[2].i16	= -2000;
+	desc->FORM.Enum.SupportedValue[3].i16	= -1500;
+	desc->FORM.Enum.SupportedValue[4].i16	= -1000;
+	desc->FORM.Enum.SupportedValue[5].i16	= -500;
+	desc->FORM.Enum.SupportedValue[6].i16	= 0;
+	desc->FORM.Enum.SupportedValue[7].i16	= 500;
+	desc->FORM.Enum.SupportedValue[8].i16	= 1000;
+	desc->FORM.Enum.SupportedValue[9].i16	= 1500;
+	desc->FORM.Enum.SupportedValue[10].i16	= 2000;
+	desc->FORM.Enum.SupportedValue[11].i16	= 2500;
+	desc->FORM.Enum.SupportedValue[12].i16	= 3000;
+
+	ptp_inject_interrupt (cam, 1000, 0x4006, 1, 0x5010, 0xffffffff);
+	return 1;
+}
+
+static int
+ptp_exposurebias_getvalue (vcamera* cam, PTPPropertyValue *val) {
+	val->i16 = cam->exposurebias;
+	ptp_inject_interrupt (cam, 1000, 0x4006, 1, 0x5010, 0xffffffff);
+	return 1;
+}
+
+static int
+ptp_exposurebias_setvalue (vcamera* cam, PTPPropertyValue *val) {
+	ptp_inject_interrupt (cam, 1000, 0x4006, 1, 0x5010, 0xffffffff);
+	gp_log (GP_LOG_DEBUG, __FUNCTION__, "got %d as value", val->i16);
+	cam->exposurebias = val->i16;
+	return 1;
+}
+
 
 static int
 ptp_datetime_getdesc (vcamera* cam, PTPDevicePropDesc *desc) {
@@ -1658,6 +1817,7 @@ static int vcam_open(vcamera* cam, const char *port) {
 			cam->fuzzmode = FUZZMODE_PROTOCOL;
 		} else {
 			cam->fuzzf = fopen(s+1,"rb");
+			cam->fuzzpending = 0;
 			cam->fuzzmode = FUZZMODE_NORMAL;
 		}
 		if (cam->fuzzf == NULL) perror(s+1);
@@ -1669,6 +1829,7 @@ static int vcam_close(vcamera* cam) {
 	if (cam->fuzzf) {
 		fclose (cam->fuzzf);
 		cam->fuzzf = NULL;
+		cam->fuzzpending = 0;
 	}
 	return GP_OK;
 }
@@ -1763,41 +1924,72 @@ vcam_process_output(vcamera *cam) {
 		}
 	}
 	gp_log (GP_LOG_ERROR,__FUNCTION__,"received an unsupported opcode 0x%04x", ptp.code);
+#ifdef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
+	/* in fuzzing mode, be less strict with unknown opcodes */
 	ptp_response (cam, PTP_RC_OperationNotSupported, 0);
+#else
+	ptp_response (cam, PTP_RC_OK, 0);
+#endif
 }
 
 static int
-vcam_read(vcamera*cam, int ep, char *data, int bytes) {
-	int	toread = bytes;
+vcam_read(vcamera*cam, int ep, unsigned char *data, int bytes) {
+	unsigned int	toread = bytes;
 
 	if (toread > cam->nrinbulk)
 		toread = cam->nrinbulk;
+
 	if (cam->fuzzf) {
-		int i, hasread;
+		unsigned int hasread;
 
 		memset(data,0,toread);
 		if (cam->fuzzmode == FUZZMODE_PROTOCOL) {
-			fwrite(cam->inbulk[i], 1, toread, cam->fuzzf);
+			fwrite(cam->inbulk, 1, toread, cam->fuzzf);
+			/* fallthrough */
 		} else {
-			hasread = fread(data, 1, toread, cam->fuzzf);
+			/* for reading fuzzer data */
+			if (cam->fuzzpending) {
+				toread = cam->fuzzpending;
+				if (toread > bytes) toread = bytes;
+				cam->fuzzpending -= toread;
+				hasread = fread (data, 1, toread, cam->fuzzf);
+			} else {
+				hasread = fread (data, 1, 4, cam->fuzzf);
+				if (hasread != 4)
+					return 0;
 
+				toread = data[0] | (data[1]<<8) | (data[2]<<16) | (data[3]<<24);
+
+				if (toread > bytes) {
+					cam->fuzzpending = toread - bytes;
+					toread = bytes;
+				}
+				if (toread <= 4)
+					return toread;
+
+				toread -= 4;
+
+				hasread = fread(data + 4, 1, toread, cam->fuzzf);
+
+				hasread += 4; /* readd size */
+			}
 #if 0
 			for (i=0;i<toread;i++)
 				data[i] ^= cam->inbulk[i];
 #endif
 			toread = hasread;
+
+			return toread;
 		}
 	}
-	else
-	{
-		memcpy (data, cam->inbulk, toread);
-	}
+
+	memcpy (data, cam->inbulk, toread);
 	memmove (cam->inbulk, cam->inbulk + toread, (cam->nrinbulk - toread));
 	cam->nrinbulk -= toread;
 	return toread;
 }
 
-static int vcam_write(vcamera*cam, int ep, const char *data, int bytes) {
+static int vcam_write(vcamera*cam, int ep, const unsigned char *data, int bytes) {
 	/*gp_log_data("vusb", data, bytes, "data, vcam_write");*/
 	if (!cam->outbulk) {
 		cam->outbulk = malloc(bytes);
@@ -1873,13 +2065,15 @@ ptp_inject_interrupt(vcamera*cam, int when, uint16_t code, int nparams, uint32_t
 }
 
 static int
-vcam_readint(vcamera*cam, char *data, int bytes, int timeout) {
+vcam_readint(vcamera*cam, unsigned char *data, int bytes, int timeout) {
 	struct timeval		now, end;
 	int 			newtimeout, tocopy;
 	struct ptp_interrupt	*pint;
 
 	if (!first_interrupt) {
+#ifndef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
 		usleep (timeout*1000);
+#endif
 		return GP_ERROR_TIMEOUT;
 	}
 	gettimeofday (&now, NULL);
@@ -1891,13 +2085,17 @@ vcam_readint(vcamera*cam, char *data, int bytes, int timeout) {
 		end.tv_sec++;
 	}
 	if (first_interrupt->triggertime.tv_sec > end.tv_sec) {
+#ifndef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
 		usleep (1000*timeout);
+#endif
 		return GP_ERROR_TIMEOUT;
 	}
 	if (	(first_interrupt->triggertime.tv_sec == end.tv_sec) &&
 		(first_interrupt->triggertime.tv_usec > end.tv_usec)
 	) {
+#ifndef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
 		usleep (1000*timeout);
+#endif
 		return GP_ERROR_TIMEOUT;
 	}
 	newtimeout = (first_interrupt->triggertime.tv_sec - now.tv_sec)*1000 + (first_interrupt->triggertime.tv_usec - now.tv_usec)/1000;

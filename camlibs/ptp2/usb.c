@@ -2,6 +2,7 @@
  *
  * Copyright (C) 2001-2004 Mariusz Woloszyn <emsi@ipartners.pl>
  * Copyright (C) 2003-2016 Marcus Meissner <marcus@jet.franken.de>
+ * Copyright (C) 2003-2017 Marcus Meissner <marcus@jet.franken.de>
  * Copyright (C) 2006-2007 Linus Walleij <triad@df.lth.se>
  *
  * This library is free software; you can redistribute it and/or
@@ -20,7 +21,7 @@
  * Boston, MA  02110-1301  USA
  */
 
-#define _BSD_SOURCE
+#define _DEFAULT_SOURCE
 #include <config.h>
 #include "ptp.h"
 #include "ptp-private.h"
@@ -214,7 +215,7 @@ finalize:
 }
 
 static uint16_t
-ptp_usb_getpacket(PTPParams *params, PTPUSBBulkContainer *packet, uint32_t *rlen)
+ptp_usb_getpacket(PTPParams *params, PTPUSBBulkContainer *packet, uint32_t maxsize, uint32_t *rlen)
 {
 	int		tries = 0, result;
 	Camera		*camera = ((PTPData *)params->data)->camera;
@@ -223,6 +224,10 @@ ptp_usb_getpacket(PTPParams *params, PTPUSBBulkContainer *packet, uint32_t *rlen
 	if (params->response_packet_size > 0) {
 		GP_LOG_D ("Returning previously buffered response packet.");
 		/* If there is a buffered packet, just use it. */
+
+		if (params->response_packet_size > maxsize)
+			params->response_packet_size = maxsize;
+
 		memcpy(packet, params->response_packet, params->response_packet_size);
 		*rlen = params->response_packet_size;
 		free(params->response_packet);
@@ -251,7 +256,7 @@ retry:
 	return PTP_ERROR_IO;
 }
 
-#define READLEN 64*1024 /* read blob size */
+#define READLEN 512*1024 /* read blob size, mostly to avoid reading all of it at once. */
 
 uint16_t
 ptp_usb_getdata (PTPParams* params, PTPContainer* ptp, PTPDataHandler *handler)
@@ -267,9 +272,16 @@ ptp_usb_getdata (PTPParams* params, PTPContainer* ptp, PTPDataHandler *handler)
 	GP_LOG_D ("Reading PTP_OC 0x%0x (%s) data...", ptp->Code, ptp_get_opcode_name(params, ptp->Code));
 	PTP_CNT_INIT(usbdata);
 
-	ret = ptp_usb_getpacket (params, &usbdata, &bytes_read);
+	ret = ptp_usb_getpacket (params, &usbdata, sizeof(usbdata), &bytes_read);
 	if (ret != PTP_RC_OK)
 		goto exit;
+
+	if (bytes_read < PTP_USB_BULK_HDR_LEN) {
+		GP_LOG_E ("Read short bulk packet in data phase %d vs %d vs min len %d", bytes_read, dtoh32(usbdata.length), (uint32_t)PTP_USB_BULK_HDR_LEN);
+		ret = PTP_ERROR_IO;
+		goto exit;
+	}
+
 	if (dtoh16(usbdata.type) != PTP_USB_CONTAINER_DATA) {
 		/* We might have got a response instead. On error for instance. */
 		if (dtoh16(usbdata.type) == PTP_USB_CONTAINER_RESPONSE) {
@@ -433,7 +445,7 @@ ptp_usb_getresp (PTPParams* params, PTPContainer* resp)
 	GP_LOG_D ("Reading PTP_OC 0x%0x (%s) response...", resp->Code, ptp_get_opcode_name(params, resp->Code));
 	PTP_CNT_INIT(usbresp);
 	/* read response, it should never be longer than sizeof(usbresp) */
-	ret = ptp_usb_getpacket(params, &usbresp, &rlen);
+	ret = ptp_usb_getpacket(params, &usbresp, sizeof(usbresp), &rlen);
 
 	if (ret!=PTP_RC_OK) {
 		ret = PTP_ERROR_IO;
@@ -481,6 +493,7 @@ ptp_usb_getresp (PTPParams* params, PTPContainer* resp)
 /* PTP Events wait for or check mode */
 #define PTP_EVENT_CHECK			0x0000	/* waits for */
 #define PTP_EVENT_CHECK_FAST		0x0001	/* checks */
+#define PTP_EVENT_CHECK_QUEUE		0x0002	/* just looks in the queue */
 
 static inline uint16_t
 ptp_usb_event (PTPParams* params, PTPContainer* event, int wait)
@@ -512,11 +525,18 @@ ptp_usb_event (PTPParams* params, PTPContainer* event, int wait)
 		if (result <= 0) result = gp_port_check_int (camera->port, (char*)&usbevent, sizeof(usbevent));
 		gp_port_set_timeout (camera->port, timeout);
 		break;
+	case PTP_EVENT_CHECK_QUEUE:
+		gp_port_get_timeout (camera->port, &timeout);
+		gp_port_set_timeout (camera->port, 0); /* indicates no waiting at all */
+		result = gp_port_check_int (camera->port, (char*)&usbevent, sizeof(usbevent));
+		gp_port_set_timeout (camera->port, timeout);
+		break;
 	default:
 		return PTP_ERROR_BADPARAM;
 	}
 	if (result < 0) {
-		GP_LOG_E ("Reading PTP event failed: %s (%d)", gp_port_result_as_string(result), result);
+		if ((result != GP_ERROR_TIMEOUT) || (wait != PTP_EVENT_CHECK_FAST))
+			GP_LOG_E ("Reading PTP event failed: %s (%d)", gp_port_result_as_string(result), result);
 		if (result == GP_ERROR_TIMEOUT)
 			return PTP_ERROR_TIMEOUT;
 		return PTP_ERROR_IO;
@@ -558,6 +578,12 @@ ptp_usb_event (PTPParams* params, PTPContainer* event, int wait)
 	event->Param2 = dtoh32(usbevent.param2);
 	event->Param3 = dtoh32(usbevent.param3);
 	return PTP_RC_OK;
+}
+
+uint16_t
+ptp_usb_event_check_queue (PTPParams* params, PTPContainer* event) {
+
+	return ptp_usb_event (params, event, PTP_EVENT_CHECK_QUEUE);
 }
 
 uint16_t

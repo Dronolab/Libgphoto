@@ -1,23 +1,94 @@
-libgphoto2 2.5.10.1 development
+libgphoto2 2.5.13.1 development release
+
+ptp2:
+* Canon EOS M capture support (M3, M5, M10 ... not the original EOS M currently)
+
+pentax:
+* Added Pentax K5-II
+
+libgphoto2_port/vusb:
+* support f-number, shutterspeed, and exposurebias in the virtual PTP camera
+
+translations:
+* updated ukrainian, polish, vietnamese
+------------------------------------------------------------------------------
+libgphoto2 2.5.13 release
+
+pentax:
+* Now using the pktriggercord codebase
+* lots of improvements
+* Please report missing Pentax K USB ids that are supported by pktriggercord!
+
+ptp2:
+* iPhone iOS 10.2 and later storage handling fixed, added dynamic storage handling
+* Sony Alpha Live View support.
+* Canon EOS M series capture enabled. (not fully working yet)
+* Various crashes and endless loops fixed that were found by the AFL fuzzer.
+* Various bugfixes in Nikon, Canon capture
+* New USB Ids:
+  * Sony: SLT A37, DSC-RX100M5
+  * Nikon KeyMission 360
+  * Canon PowerShot G16
+  * Canon EOS M5, EOS M10
+  * Fuji Fujifilm XT-2
+  * GoPro Hero 5 Black
+
+------------------------------------------------------------------------------
+libgphoto2 2.5.12 release
+
+ptp2:
+* Canon EOS: more fixes for Canon EOS 5D Mark IV and Canon EOS 80D.
+* Parrot Sequoia support and property decoding
+* Nikon 1: Fixed Nikon 1 capture
+* Sony Alpha: various bugfixes.
+* New USB IDs:
+  * Nikon Coolpix AW130
+  * Nikon DSC D3400
+  * Parrot Sequoia
+  * GoPro Hero, Hero4 Silver, Hero + 
+* bugfixes and cleanups
+
+canon:
+* fixed zoom on some older Canon Powershots
+
+translations:
+* updated polish, ukrainian, vietnamese, danish, french, svensk
+------------------------------------------------------------------------------
+libgphoto2 2.5.11 release
 
 canon:
 * not experimental anymore, for some years
+* some bugfixes in configuration handling
 
 ptp2:
+* canon: EOS capture improvements, also supporting new EOS
+* sony: tethering and trigger capture implemented, capture stability improvements
 * sony: exposure compensation setting fixed
 * sony: capture and autofocus configurations, similar to eosremoterelease
-* fixed serialnumber retrieval
-* Nikon: "autofocus" for global autofocus enable/disable (default on, default liveview off)
-* new ids reported:
-  - Sony Alpha 7, DSC-RX100M4
-  - Nikon DSC Df
-  - Canon EOS 1Dx Mark 3, 80D
+* generic: fixed serialnumber retrieval
+* nikon: "autofocus" config variable for global autofocus enable/disable (default on, default liveview off)
+* various bugs fixed, stability improved
+* ptpip: allow different event ports. --port ptpip:IP:dataport:eventport
+* New ids reported:
+  - Sony Alpha 7, DSC-RX100M4, NEX-7, DSC-HX20V, Alpha 6300, A7S II, A7, 
+  - Nikon DSC Df, D7200, D5, D810A, 1 V3
+  - Canon EOS 1Dx Mark 3, 80D, 5D Mark IV
+  - Canon Digital IXUS 180
+  - various music players / android phones imported from libmtp 
 
 libgphoto2:
-* speed up initial startup
+* Speed up initial startup.
+* Win32: store settings in the "User Profile\.gphoto\settings" and not in C:\\Windows anymore.
+* gp_widget_changed() no longer clears the "changed" state to make this API more consistent.
+  Use gp_widget_set_changed(widget,FALSE) to do so.
+
+examples:
+* sample-photobooth: a sample program handling tethering, SIGUSR1 driven capture and SIGUSR2
+  based configuration reading.
+* sample-afl: code to inject afl fuzzing data
 
 translations:
-* updated svensk, ukrainian, polish, finnish, russian, danish, polish, brazilian, serbian, brazilian, serbian
+* updated swedish, ukrainian, polish, finnish, russian, danish, polish, brazilian, serbian, dutch, chinese
 ------------------------------------------------------------------------------
 libgphoto2 2.5.10 release
 

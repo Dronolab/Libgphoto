@@ -21,7 +21,7 @@
  * Boston, MA  02110-1301  USA
  */
 
-#define _BSD_SOURCE
+#define _DEFAULT_SOURCE
 #include "config.h"
 
 #include <stdio.h>
@@ -139,13 +139,13 @@ char F1newstatus(GPPort *port, int verbose, char *return_buf)
   unsigned char buf[34];
   char status_buf[1000]="";
   char tmp_buf[150]="";
+  int i;
+
   buf[0] = 0x03;
   buf[1] = 0x02;
   sendcommand(port,buf, 2);
-  recvdata(port, buf, 33);
-#ifdef DEBUG
-  fprintf(stderr,"Status: %02x%02x:%02x(len = %d)\n", buf[0], buf[1], buf[2], i);
-#endif
+  i = recvdata(port, buf, 33);
+  gp_log (GP_LOG_DEBUG, "F1newstatus", "Status: %02x%02x:%02x(len = %d)", buf[0], buf[1], buf[2], i);
   if((buf[0] != 0x03) || (buf[1] != 0x02) ||(buf[2] != 0)){
     Abort(port);
     return(-1);
@@ -191,16 +191,14 @@ char F1newstatus(GPPort *port, int verbose, char *return_buf)
 
 int F1status(GPPort *port)
 {
-
   unsigned char buf[34];
+  int i;
 
   buf[0] = 0x03;
   buf[1] = 0x02;
   sendcommand(port,buf, 2);
-  recvdata(port, buf, 33);
-#ifdef DEBUG
-  fprintf(stderr,"Status: %02x%02x:%02x(len = %d)\n", buf[0], buf[1], buf[2], i);
-#endif
+  i = recvdata(port, buf, 33);
+  gp_log (GP_LOG_DEBUG, "F1status", "Status: %02x%02x:%02x(len = %d)\n", buf[0], buf[1], buf[2], i);
   if((buf[0] != 0x03) || (buf[1] != 0x02) ||(buf[2] != 0)){
     Abort(port);
     return(-1);
@@ -267,16 +265,15 @@ int F1fopen(GPPort *port, char *name)
 int F1fclose(GPPort*port)
 {
   unsigned char buf[4];
+  int i;
 
   buf[0] = 0x02;
   buf[1] = 0x0B;
   buf[2] = 0x00;
   buf[3] = 0x00;
   sendcommand(port,buf, 4);
-  recvdata(port, buf, 3);
-#ifdef DEBUG
-  fprintf(stderr,"Fclose: %02x%02x:%02x\n", buf[0], buf[1], buf[2]);
-#endif
+  i = recvdata(port, buf, 3);
+  gp_log (GP_LOG_DEBUG, "F1fclose", "Fclose: %02x%02x:%02x(len = %d)\n", buf[0], buf[1], buf[2], i);
   if((buf[0] != 0x02) || (buf[1] != 0x0B) || (buf[2] != 0x00)){
     fprintf(stderr,"F1fclose fail\n");
     Abort(port);
@@ -436,19 +433,10 @@ unsigned long F1finfo(GPPort *port,char *name)
     return(0);
   }
 
-#ifdef DEBUG
-  fprintf(stderr,"info:");
-  for(i = 0; i < len ; i++)
-    fprintf(stderr,"%02x ", buf[i]);
-  fprintf(stderr,"len = %d\n", len);
-#endif
-
   flen = buf[33] * 0x1000000 + buf[34] * 0x10000 +
     buf[35] * 0x100 + buf[36];
-#ifdef DEBUG
-  fprintf(stderr,"inf len = %ld %02x %02x %02x %02x\n", flen,
+  gp_log (GP_LOG_DEBUG , "F1finfo", "inf len = %ld %02x %02x %02x %02x\n", flen,
           buf[33], buf[34], buf[35], buf[36]);
-#endif
 
   if(buf[2] != 0) return(0);
   return(flen);
@@ -514,10 +502,8 @@ int F1ok(GPPort*port)
   while(retrycount--){
     sendcommand(port,buf, 32);
     recvdata(port, buf, 32);
-#ifdef DEBUG
-    fprintf(stderr,"OK:%02x%02x:%c%c%c%c\n", buf[0], buf[1],
+    gp_log (GP_LOG_DEBUG, "F1ok", "OK:%02x%02x:%c%c%c%c\n", buf[0], buf[1],
             buf[3],buf[4],buf[5],buf[6]);
-#endif
     if((buf[0] != 0x01) || (buf[1] != 0x01) || (buf[2] != 0x00) ){
       Abort(port);
       F1reset(port);
@@ -537,10 +523,8 @@ F1reset(GPPort *port)
   buf[1] = 0x02;
   sendcommand(port,buf, 2);
   recvdata(port, buf, 3);
-#ifdef DEBUG
-  fprintf(stderr,"Reset: %02x%02x:%02x\n", buf[0], buf[1], buf[2]);
-#endif
-  if(!((buf[0] == 0x01 ) && (buf[1] == 0x02) && buf[2] == 0x00))
+  gp_log (GP_LOG_DEBUG, "F1reset", "Reset: %02x%02x:%02x\n", buf[0], buf[1], buf[2]);
+  if(!((buf[0] == 0x01 ) && (buf[1] == 0x02) && (buf[2] == 0x00)))
     goto retryreset;
   return (int) buf[2];          /*ok*/
 }

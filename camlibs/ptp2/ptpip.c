@@ -28,7 +28,7 @@
  *
  * Nikon WU-1* adapters might use 0011223344556677 as GUID always...
  */
-#define _BSD_SOURCE
+#define _DEFAULT_SOURCE
 #include "config.h"
 
 #include <stdlib.h>
@@ -441,8 +441,12 @@ ptp_ptpip_init_command_request (PTPParams* params)
 	unsigned char	guid[16];
 	
 	ptp_nikon_getptpipguid(guid);
+#if !defined (WIN32)
 	if (gethostname (hostname, sizeof(hostname)))
 		return PTP_RC_GeneralError;
+#else
+	strcpy (hostname, "gpwindows");
+#endif
 	len = ptpip_initcmd_name + (strlen(hostname)+1)*2 + 4;
 
 	cmdrequest = malloc(len);
@@ -623,6 +627,12 @@ ptp_ptpip_event (PTPParams* params, PTPContainer* event, int wait)
 	GP_LOG_E ("not supported currently on Windows");
 	return PTP_RC_OK;
 #endif
+}
+
+uint16_t
+ptp_ptpip_event_check_queue (PTPParams* params, PTPContainer* event) {
+	/* the fast check just takes 1ms, so lets keep it */
+	return ptp_ptpip_event (params, event, PTP_EVENT_CHECK_FAST);
 }
 
 uint16_t
